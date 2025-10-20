@@ -341,78 +341,70 @@ this.chartGroup.append('text')
                 `;
             }
             
-   updateChart() {
-    const validData = this.filteredData;
-
-    const categories = ['High Quality', 'Good Quality', 'Moderate Quality', 'Low Quality'];
-
-    const xScale = d3.scalePoint()
-        .domain(categories)
-        .range([0, this.innerWidth])
-        .padding(0.5);
-
-    const rScale = d3.scaleSqrt()
-        .domain([0, d3.max(validData, d => d.score) || 100])
-        .range([5, 30]); // bubble radius
-
-    // Clear y-axis (we only use categories on x-axis)
-    this.xAxisGroup.call(d3.axisBottom(xScale));
-    this.yAxisGroup.selectAll("*").remove();
-
-    // Bind data
-    const bubbles = this.chartGroup.selectAll('.dot')
+updateChart() {
+    const validData = this.filteredData.filter(d => d.year && d.year > 1990);
+    
+    // Create scales
+    const xScale = d3.scaleLinear()
+        .domain(d3.extent(validData, d => d.year))
+        .range([0, this.innerWidth]);
+    
+    const yScale = d3.scaleLinear()
+        .domain([0, 100])
+        .range([this.innerHeight, 0]);
+    
+    // Calculate the actual pixel distance between years
+    const yearExtent = d3.extent(validData, d => d.year);
+    const yearRange = yearExtent[1] - yearExtent[0] || 1;
+    const pixelsPerYear = this.innerWidth / yearRange;
+    
+    // MAXIMUM jitter - use full distance between years (minus a tiny buffer)
+    const maxJitter = pixelsPerYear - 2; // Just 2px buffer to stay barely inside
+    const jitterY = 3;
+    
+    // Update axes
+    this.xAxisGroup.call(d3.axisBottom(xScale).tickFormat(d3.format('d')));
+    this.yAxisGroup.call(d3.axisLeft(yScale));
+    
+    // Bind data to dots
+    const dots = this.chartGroup.selectAll('.dot')
         .data(validData, d => d.id);
-
-    bubbles.exit().remove();
-
-    const bubblesEnter = bubbles.enter()
+    
+    // Remove old dots
+    dots.exit().remove();
+    
+    // Add new dots
+    const dotsEnter = dots.enter()
         .append('circle')
         .attr('class', 'dot')
-        .attr('r', 0)
-        .attr('cx', this.innerWidth / 2) // start from center
-        .attr('cy', this.innerHeight / 2);
-
-    const allBubbles = bubbles.merge(bubblesEnter)
+        .attr('r', 0);
+    
+    // Update all dots with maximum jitter
+    dots.merge(dotsEnter)
+        .transition()
+        .duration(500)
+        .attr('cx', d => {
+            const baseX = xScale(d.year);
+            const jitter = (Math.random() - 0.5) * maxJitter;
+            // Clamp to keep inside chart
+            return Math.max(6, Math.min(this.innerWidth - 6, baseX + jitter));
+        })
+        .attr('cy', d => {
+            const baseY = yScale(d.score);
+            const jitter = (Math.random() - 0.5) * jitterY;
+            // Clamp to keep inside chart
+            return Math.max(6, Math.min(this.innerHeight - 6, baseY + jitter));
+        })
+        .attr('r', 6)
         .attr('fill', d => this.colorScale(d.quality_category))
-        .attr('opacity', 0.8)
-        .attr('stroke', 'white')
-        .attr('stroke-width', 1.5)
+        .attr('opacity', 0.6);
+    
+    // Add hover effects
+    this.chartGroup.selectAll('.dot')
         .on('mouseover', (event, d) => this.showTooltip(event, d))
         .on('mouseout', () => this.hideTooltip())
         .on('click', (event, d) => window.open(d.url, '_blank'));
-
-    // --- Force simulation with reheat ---
-    const simulation = d3.forceSimulation(validData)
-        .force("x", d3.forceX(d => xScale(d.quality_category)).strength(0.3))
-        .force("y", d3.forceY(this.innerHeight / 2).strength(0.1))
-        .force("collide", d3.forceCollide(d => rScale(d.score) + 2))
-        .alpha(1) // reheat
-        .alphaDecay(0.05)
-        .on("tick", () => {
-            allBubbles
-                .attr("cx", d => d.x)
-                .attr("cy", d => d.y)
-                .attr("r", d => rScale(d.score));
-        });
-
-    // Add group labels
-    const labels = this.chartGroup.selectAll(".group-label")
-        .data(categories);
-
-    labels.enter()
-        .append("text")
-        .attr("class", "group-label")
-        .merge(labels)
-        .attr("x", d => xScale(d))
-        .attr("y", this.innerHeight + 35)
-        .attr("text-anchor", "middle")
-        .attr("fill", "#2c3e50")
-        .style("font-weight", "600")
-        .text(d => d);
-
-    labels.exit().remove();
 }
-
             
             showTooltip(event, d) {
                 const tooltip = document.getElementById('tooltip');
